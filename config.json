@@ -6,10 +6,10 @@
   "max_tickets_cat_2": 5,
   "category_id_2": 1104816667244109945,
   "team_role_id_1": 1104816665251827863,
-  "team_role_id_2": 123,
+  "team_role_id_2": 1104816665268588575,
   "log_channel_id": 1104816669479669916,
   "timezone": "CET",
-  "embed_title": "Support-Tickets",
-  "embed_description": "Here you can open a Support Ticket!",
-  "rabatt_role_ids": []
+  "embed_title": "Ticket erstellen",
+  "embed_description": "Erstelle hier ein Ticket",
+  "rabatt_role_ids": [1104816665281179764]
 }

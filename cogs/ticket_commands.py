@@ -41,7 +41,6 @@ class Ticket_Command(commands.Cog):
         channel = self.bot.get_channel(TICKET_CHANNEL)
         embed   = discord.Embed(title=EMBED_TITLE, description=EMBED_DESCRIPTION, color=discord.Color.blue())
         await channel.send(embed=embed, view=MyView(self.bot))
-        await interaction.response.send_message("Ticket Menu was sent!", ephemeral=True)
 
     # ── /add ──────────────────────────────────────────────────────────────────
     @app_commands.command(name="add", description="Add a Member to the Ticket")
@@ -54,12 +53,12 @@ class Ticket_Command(commands.Cog):
                 embed_links=True, attach_files=True, read_message_history=True, external_emojis=True
             )
             embed = discord.Embed(
-                description=f'Added {member.mention} to <#{interaction.channel.id}>!\nUse /remove to remove a User.',
+                description=f'{member.mention} zu <#{interaction.channel.id}> hinzugefügt!\nNutze /remove um einen User zu entfernen.',
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                description='You can only use this command in a Ticket!',
+                description='Du kannst diesen Befehl nur in einem Ticket verwenden!',
                 color=discord.Color.red()
             )
         await interaction.response.send_message(embed=embed)
@@ -75,12 +74,12 @@ class Ticket_Command(commands.Cog):
                 embed_links=False, attach_files=False, read_message_history=False, external_emojis=False
             )
             embed = discord.Embed(
-                description=f'Removed {member.mention} from <#{interaction.channel.id}>!\nUse /add to add a User.',
+                description=f'{member.mention} vom <#{interaction.channel.id}> entfernt!',
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                description='You can only use this command in a Ticket!',
+                description='Du kannst diesen Befehl nur in einem Ticket nutzen!',
                 color=discord.Color.red()
             )
         await interaction.response.send_message(embed=embed)
@@ -124,7 +123,7 @@ class Ticket_Command(commands.Cog):
         transcript_info.add_field(name="Ticket Created", value=f"<t:{ticket_created_unix}:f>", inline=True)
         transcript_info.add_field(name="Ticket Closed",  value=f"<t:{ticket_closed_unix}:f>",  inline=True)
 
-        embed = discord.Embed(description='Ticket is deleting in 5 seconds.', color=0xff0000)
+        embed = discord.Embed(description='Ticket wird in 5 Sekunden gelöscht.', color=0xff0000)
         await interaction.response.send_message(embed=embed)
 
         try:

@@ -4,6 +4,7 @@ import pytz
 import json
 import sqlite3
 from datetime import datetime
+from collections import Counter
 import chat_exporter
 import io
 import traceback
@@ -202,6 +203,137 @@ async def create_ticket_channel(
     cur.execute("UPDATE ticket SET ticket_channel=? WHERE id=?", (ticket_channel.id, ticket_number))
     conn.commit()
     return ticket_channel, ticket_number
+
+
+async def get_ticket_creator(bot: commands.Bot, guild: discord.Guild, user_id: int):
+    member = guild.get_member(user_id)
+    if member is not None:
+        return member
+
+    try:
+        return await bot.fetch_user(user_id)
+    except discord.HTTPException:
+        return None
+
+
+def user_label(user) -> str:
+    if user is None:
+        return "Unbekannt"
+
+    mention = getattr(user, "mention", str(user))
+    return f"{mention} - {user}"
+
+
+async def collect_transcript_users(channel: discord.TextChannel, limit: int = 200) -> str:
+    counts = Counter()
+    users = {}
+
+    async for message in channel.history(limit=limit, oldest_first=False):
+        author = message.author
+        counts[author.id] += 1
+        users[author.id] = author
+
+    lines = [
+        f"{count} - {user_label(users[user_id])}"
+        for user_id, count in counts.most_common()
+    ]
+    if not lines:
+        return "Keine Nachrichten gefunden."
+
+    value = "\n".join(lines)
+    if len(value) <= 1024:
+        return value
+
+    shortened = []
+    total = 0
+    for line in lines:
+        if total + len(line) + 1 > 1000:
+            break
+        shortened.append(line)
+        total += len(line) + 1
+    shortened.append("Weitere Nutzer gekuerzt.")
+    return "\n".join(shortened)
+
+
+async def send_support_transcript_log(
+    *,
+    bot: commands.Bot,
+    channel: discord.TextChannel,
+    log_channel: discord.TextChannel,
+    ticket_id: int,
+    ticket_creator,
+    closed_by: discord.abc.User,
+):
+    transcript = await chat_exporter.export(
+        channel, limit=200, tz_info=TIMEZONE, military_time=True, bot=bot
+    )
+    if transcript is None:
+        raise RuntimeError("chat_exporter returned no transcript")
+
+    filename = f"transcript-{channel.name}.html"
+    file = discord.File(io.BytesIO(transcript.encode("utf-8")), filename=filename)
+    transcript_users = await collect_transcript_users(channel, limit=200)
+
+    embed = discord.Embed(
+        title=f"Transcript | {channel.name}",
+        color=discord.Color.blue(),
+        timestamp=datetime.utcnow(),
+    )
+    if ticket_creator is not None:
+        embed.set_author(name=str(ticket_creator), icon_url=ticket_creator.display_avatar.url)
+        embed.set_thumbnail(url=ticket_creator.display_avatar.url)
+
+    embed.add_field(name="Ticket Owner", value=user_label(ticket_creator), inline=False)
+    embed.add_field(name="Ticket Name", value=channel.name, inline=False)
+    embed.add_field(name="Geschlossen von", value=user_label(closed_by), inline=False)
+    embed.add_field(name="Transcript", value="Wird hochgeladen...", inline=False)
+    embed.add_field(name="Nutzer im Transcript", value=transcript_users, inline=False)
+    embed.set_footer(text=f"Ticket ID: {ticket_id}")
+
+    message = await log_channel.send(embed=embed, file=file)
+    if message.attachments:
+        transcript_url = message.attachments[0].url
+        embed.set_field_at(3, name="Transcript", value=f"[Anschauen]({transcript_url})", inline=False)
+        await message.edit(embed=embed)
+
+
+async def close_ticket_channel(bot: commands.Bot, interaction: discord.Interaction):
+    guild = bot.get_guild(GUILD_ID) or interaction.guild
+    log_ch = bot.get_channel(LOG_CHANNEL)
+    ticket_id = interaction.channel.id
+
+    cur.execute("SELECT id, discord_id, category FROM ticket WHERE ticket_channel=?", (ticket_id,))
+    ticket_data = cur.fetchone()
+    if ticket_data is None:
+        await interaction.response.send_message("Dieser Channel ist kein Ticket.", ephemeral=True)
+        return
+
+    t_id, ticket_creator_id, category_id = ticket_data
+    ticket_creator = await get_ticket_creator(bot, guild, ticket_creator_id) if guild else None
+
+    embed = discord.Embed(description="Ticket wird in 5 Sekunden geloescht.", color=0xff0000)
+    await interaction.response.send_message(embed=embed)
+
+    is_support_ticket = category_id == CATEGORY_ID1 or interaction.channel.name.startswith("ticket-")
+    if is_support_ticket and log_ch is not None:
+        try:
+            await send_support_transcript_log(
+                bot=bot,
+                channel=interaction.channel,
+                log_channel=log_ch,
+                ticket_id=t_id,
+                ticket_creator=ticket_creator,
+                closed_by=interaction.user,
+            )
+        except Exception as error:
+            print("Transcript log error:", flush=True)
+            traceback.print_exception(type(error), error, error.__traceback__)
+            await log_ch.send(f"Transcript fuer `{interaction.channel.name}` konnte nicht erstellt werden.")
+
+    await asyncio.sleep(5)
+    await interaction.channel.delete(reason="Ticket geloescht")
+    cur.execute("DELETE FROM ticket WHERE discord_id=? AND ticket_channel=?", (ticket_creator_id, ticket_id))
+    conn.commit()
 
 
 # ─── Modal für Support-Ticket ─────────────────────────────────────────────────
@@ -420,54 +552,8 @@ class TicketOptions(discord.ui.View):
 
     @discord.ui.button(label="Delete Ticket 🎫", style=discord.ButtonStyle.red, custom_id="delete")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild     = self.bot.get_guild(GUILD_ID)
-        log_ch    = self.bot.get_channel(LOG_CHANNEL)
-        ticket_id = interaction.channel.id
-
-        cur.execute("SELECT id, discord_id, ticket_created FROM ticket WHERE ticket_channel=?", (ticket_id,))
-        ticket_data = cur.fetchone()
-        if ticket_data is None:
-            await interaction.response.send_message("Ticket not found in database.", ephemeral=True)
-            return
-
-        t_id, ticket_creator_id, ticket_created = ticket_data
-        ticket_creator      = guild.get_member(ticket_creator_id)
-        ticket_created_unix = convert_to_unix_timestamp(ticket_created)
-        timezone            = pytz.timezone(TIMEZONE)
-        ticket_closed       = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S')
-        ticket_closed_unix  = convert_to_unix_timestamp(ticket_closed)
-
-        transcript = await chat_exporter.export(
-            interaction.channel, limit=200, tz_info=TIMEZONE, military_time=True, bot=self.bot
-        )
-        make_file = lambda: discord.File(
-            io.BytesIO(transcript.encode()),
-            filename=f"transcript-{interaction.channel.name}.html"
-        )
-
-        transcript_info = discord.Embed(
-            title=f"Ticket Deleted | {interaction.channel.name}",
-            color=discord.Color.blue()
-        )
-        transcript_info.add_field(name="ID",             value=t_id,                            inline=True)
-        transcript_info.add_field(name="Opened by",      value=ticket_creator.mention,          inline=True)
-        transcript_info.add_field(name="Closed by",      value=interaction.user.mention,        inline=True)
-        transcript_info.add_field(name="Ticket Created", value=f"<t:{ticket_created_unix}:f>", inline=True)
-        transcript_info.add_field(name="Ticket Closed",  value=f"<t:{ticket_closed_unix}:f>",  inline=True)
-
-        embed = discord.Embed(description='Ticket is deleting in 5 seconds.', color=0xff0000)
-        await interaction.response.send_message(embed=embed)
-
-        try:
-            await ticket_creator.send(embed=transcript_info, file=make_file())
-        except discord.Forbidden:
-            transcript_info.add_field(name="Error", value="Ticket Creator DMs are disabled", inline=True)
-
-        await log_ch.send(embed=transcript_info, file=make_file())
-        await asyncio.sleep(3)
-        await interaction.channel.delete(reason="Ticket Deleted")
-        cur.execute("DELETE FROM ticket WHERE discord_id=? AND ticket_channel=?", (ticket_creator_id, ticket_id))
-        conn.commit()
+        await close_ticket_channel(self.bot, interaction)
+        return
 
 
 # ─── Cog ──────────────────────────────────────────────────────────────────────

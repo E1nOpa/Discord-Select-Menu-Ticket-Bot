@@ -1,0 +1,6 @@
+.venv/
+config.json
+.env
+__pycache__/
+Database.db
+.idea

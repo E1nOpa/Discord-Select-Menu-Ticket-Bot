@@ -1,13 +1,15 @@
 {
-  "token": "",
-  "guild_id": 123,
-  "ticket_channel_id": 123,
-  "category_id_1": 123,
-  "category_id_2": 123,
-  "team_role_id_1": 123,
+  "guild_id": 1104816665205690499,
+  "ticket_channel_id": 1104816666023563323,
+  "category_id_1": 1104816666438803580,
+  "max_tickets_cat_1": 3,
+  "max_tickets_cat_2": 5,
+  "category_id_2": 1104816667244109945,
+  "team_role_id_1": 1104816665251827863,
   "team_role_id_2": 123,
-  "log_channel_id": 123,
+  "log_channel_id": 1104816669479669916,
   "timezone": "CET",
   "embed_title": "Support-Tickets",
-  "embed_description": "Here you can open a Support Ticket!"
+  "embed_description": "Here you can open a Support Ticket!",
+  "rabatt_role_ids": []
 }

@@ -5,11 +5,16 @@ import json
 from discord.ext import commands, tasks
 from cogs.ticket_system import Ticket_System
 from cogs.ticket_commands import Ticket_Command
+import os
+from dotenv import load_dotenv
+import asyncio
+
+load_dotenv()
 
 with open("config.json", mode="r") as config_file:
     config = json.load(config_file)
 
-BOT_TOKEN = config["token"]
+BOT_TOKEN = os.getenv("TOKEN")
 GUILD_ID = config["guild_id"]
 CATEGORY_ID1 = config["category_id_1"]
 CATEGORY_ID2 = config["category_id_2"]
@@ -42,5 +47,4 @@ async def main():
         await bot.add_cog(Ticket_Command(bot))
         await bot.start(BOT_TOKEN)
 
-import asyncio
 asyncio.run(main())

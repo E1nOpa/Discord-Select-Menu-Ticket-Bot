@@ -19,14 +19,13 @@ from cogs.ticket_system import (
 with open("config.json", mode="r", encoding="utf-8") as config_file:
     config = json.load(config_file)
 
-TICKET_CHANNEL = config["ticket_channel_id"]
-RABATT_ROLE_IDS = config["rabatt_role_ids"]
-EMBED_TITLE = config["embed_title"]
+TICKET_CHANNEL    = config["ticket_channel_id"]
+RABATT_ROLE_IDS   = config["rabatt_role_ids"]
+EMBED_TITLE       = config["embed_title"]
 EMBED_DESCRIPTION = config["embed_description"]
 
 conn = sqlite3.connect("Database.db")
-cur = conn.cursor()
-
+cur  = conn.cursor()
 
 class Ticket_Command(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -63,14 +62,9 @@ class Ticket_Command(commands.Cog):
 
         await interaction.channel.set_permissions(
             member,
-            send_messages=True,
-            read_messages=True,
-            view_channel=True,
-            add_reactions=False,
-            embed_links=True,
-            attach_files=True,
-            read_message_history=True,
-            external_emojis=True,
+            send_messages=True, read_messages=True, view_channel=True,
+            add_reactions=False, embed_links=True, attach_files=True,
+            read_message_history=True, external_emojis=True,
         )
         add_ticket_access(ticket_id, member.id)
         embed = discord.Embed(
@@ -93,14 +87,9 @@ class Ticket_Command(commands.Cog):
 
         await interaction.channel.set_permissions(
             member,
-            send_messages=False,
-            read_messages=False,
-            view_channel=False,
-            add_reactions=False,
-            embed_links=False,
-            attach_files=False,
-            read_message_history=False,
-            external_emojis=False,
+            send_messages=False, read_messages=False, view_channel=False,
+            add_reactions=False, embed_links=False, attach_files=False,
+            read_message_history=False, external_emojis=False,
         )
         remove_ticket_access(ticket_id, member.id)
         embed = discord.Embed(
@@ -150,7 +139,6 @@ class Ticket_Command(commands.Cog):
             await interaction.response.send_message("Commands sind in DMs nicht erlaubt!", ephemeral=True)
         else:
             raise error
-
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Ticket_Command(bot))

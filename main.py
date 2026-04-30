@@ -13,13 +13,11 @@ import logging
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-with open("config.json", mode="r") as config_file:
+with open("config.json", mode="r", encoding="utf-8") as config_file:
     config = json.load(config_file)
 
 BOT_TOKEN = os.getenv("TOKEN")
 GUILD_ID = config["guild_id"]
-CATEGORY_ID1 = config["category_id_1"]
-CATEGORY_ID2 = config["category_id_2"]
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)

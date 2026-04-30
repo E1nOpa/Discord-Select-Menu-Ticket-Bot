@@ -9,28 +9,36 @@ import chat_exporter
 import io
 import traceback
 from discord.ext import commands
-from discord.ext.commands import is_owner
 
 with open("config.json", mode="r", encoding="utf-8") as config_file:
     config = json.load(config_file)
 
 GUILD_ID          = config["guild_id"]
 TICKET_CHANNEL    = config["ticket_channel_id"]
-CATEGORY_ID1      = config["category_id_1"]
-CATEGORY_ID2      = config["category_id_2"]
-TEAM_ROLE1        = config["team_role_id_1"]
-TEAM_ROLE2        = config["team_role_id_2"]
 LOG_CHANNEL       = config["log_channel_id"]
 TIMEZONE          = config["timezone"]
 EMBED_TITLE       = config["embed_title"]
 EMBED_DESCRIPTION = config["embed_description"]
-MAX_TICKETS_CAT1  = config["max_tickets_cat_1"]
-MAX_TICKETS_CAT2  = config["max_tickets_cat_2"]
+
+# ─── Kategorien laden ─────────────────────────────────────────────────────────
+# Jede Kategorie ist ein Dict mit: name, id, role, prefix, limit,
+#                                  transcript, auto_close_on_leave,
+#                                  select_label, select_description, select_emoji
+CATEGORIES: list[dict] = config["categories"]
+
+def get_category(category_id: int) -> dict | None:
+    """Gibt das Kategorie-Dict für eine gegebene category_id zurück."""
+    return next((c for c in CATEGORIES if c["id"] == category_id), None)
+
+def team_role_id_for_category(category_id: int) -> int | None:
+    cat = get_category(category_id)
+    return cat["role"] if cat else None
+
+# ─── Datenbank ────────────────────────────────────────────────────────────────
 
 conn = sqlite3.connect('Database.db')
 cur  = conn.cursor()
 
-# Tabellen erstellen
 cur.execute("""
     CREATE TABLE IF NOT EXISTS ticket (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,19 +66,17 @@ cur.execute("""
     )
 """)
 
-# Rabatt-Wert Tabelle
 cur.execute("""
     CREATE TABLE IF NOT EXISTS settings (
         key   TEXT PRIMARY KEY,
         value TEXT
     )
 """)
-# Standard-Rabatt falls noch nicht vorhanden
 cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rabatt', '0')")
 conn.commit()
 
 
-# ─── Helper ──────────────────────────────────────────────────────────────────
+# ─── Helper ───────────────────────────────────────────────────────────────────
 
 def convert_to_unix_timestamp(date_string: str) -> int:
     dt_obj     = datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
@@ -88,13 +94,12 @@ def set_rabatt(value: str):
     cur.execute("UPDATE settings SET value=? WHERE key='rabatt'", (value,))
     conn.commit()
 
-def count_user_tickets(user_id: int, category: int) -> int:
+def count_user_tickets(user_id: int, category_id: int) -> int:
     cur.execute(
         "SELECT COUNT(*) FROM ticket WHERE discord_id=? AND category=? AND closed=0",
-        (user_id, category)
+        (user_id, category_id)
     )
     return cur.fetchone()[0]
-
 
 def add_ticket_access(ticket_id: int, user_id: int):
     cur.execute(
@@ -103,20 +108,16 @@ def add_ticket_access(ticket_id: int, user_id: int):
     )
     conn.commit()
 
-
 def remove_ticket_access(ticket_id: int, user_id: int):
     cur.execute("DELETE FROM ticket_access WHERE ticket_id=? AND discord_id=?", (ticket_id, user_id))
     conn.commit()
-
 
 def get_ticket_access(ticket_id: int) -> list[int]:
     cur.execute("SELECT discord_id FROM ticket_access WHERE ticket_id=?", (ticket_id,))
     return [row[0] for row in cur.fetchall()]
 
-
 def build_main_embed() -> discord.Embed:
     return discord.Embed(title=EMBED_TITLE, description=EMBED_DESCRIPTION, color=discord.Color.blue())
-
 
 async def send_ephemeral_error(interaction: discord.Interaction, message: str):
     embed = discord.Embed(description=message, color=discord.Color.red())
@@ -125,16 +126,13 @@ async def send_ephemeral_error(interaction: discord.Interaction, message: str):
     else:
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
 async def reset_ticket_menu(interaction: discord.Interaction, bot: commands.Bot):
     if interaction.message is None:
         return
-
     try:
         await interaction.message.edit(embed=build_main_embed(), view=MyView(bot=bot))
     except discord.HTTPException:
         pass
-
 
 async def get_ticket_targets(
     bot: commands.Bot,
@@ -165,12 +163,11 @@ async def get_ticket_targets(
     if team_role is None:
         await send_ephemeral_error(
             interaction,
-            f"Die Team-Rolle `{team_role_id}` wurde nicht gefunden. Bitte `config.json` pruefen.",
+            f"Die Team-Rolle `{team_role_id}` wurde nicht gefunden. Bitte `config.json` prüfen.",
         )
         return None, None, None
 
     return guild, category, team_role
-
 
 def create_ticket_record(user: discord.abc.User, creation_date: str, category_id: int) -> int:
     cur.execute(
@@ -179,7 +176,6 @@ def create_ticket_record(user: discord.abc.User, creation_date: str, category_id
     )
     conn.commit()
     return cur.lastrowid
-
 
 async def create_ticket_channel(
     *,
@@ -239,25 +235,20 @@ async def get_ticket_creator(bot: commands.Bot, guild: discord.Guild, user_id: i
     member = guild.get_member(user_id)
     if member is not None:
         return member
-
     try:
         return await bot.fetch_user(user_id)
     except discord.HTTPException:
         return None
 
-
 def user_label(user) -> str:
     if user is None:
         return "Unbekannt"
-
     mention = getattr(user, "mention", str(user))
     return f"{mention} - {user}"
-
 
 async def collect_transcript_users(channel: discord.TextChannel, limit: int = 200) -> str:
     counts = Counter()
     users = {}
-
     async for message in channel.history(limit=limit, oldest_first=False):
         author = message.author
         counts[author.id] += 1
@@ -281,7 +272,7 @@ async def collect_transcript_users(channel: discord.TextChannel, limit: int = 20
             break
         shortened.append(line)
         total += len(line) + 1
-    shortened.append("Weitere Nutzer gekuerzt.")
+    shortened.append("Weitere Nutzer gekürzt.")
     return "\n".join(shortened)
 
 
@@ -313,11 +304,11 @@ async def send_support_transcript_log(
         embed.set_author(name=str(ticket_creator), icon_url=ticket_creator.display_avatar.url)
         embed.set_thumbnail(url=ticket_creator.display_avatar.url)
 
-    embed.add_field(name="Ticket Owner", value=user_label(ticket_creator), inline=False)
-    embed.add_field(name="Ticket Name", value=channel.name, inline=False)
-    embed.add_field(name="Geschlossen von", value=user_label(closed_by), inline=False)
-    embed.add_field(name="Transcript", value="Wird hochgeladen...", inline=False)
-    embed.add_field(name="Nutzer im Transcript", value=transcript_users, inline=False)
+    embed.add_field(name="Ticket Owner",       value=user_label(ticket_creator), inline=False)
+    embed.add_field(name="Ticket Name",        value=channel.name,               inline=False)
+    embed.add_field(name="Geschlossen von",    value=user_label(closed_by),      inline=False)
+    embed.add_field(name="Transcript",         value="Wird hochgeladen...",       inline=False)
+    embed.add_field(name="Nutzer im Transcript", value=transcript_users,         inline=False)
     embed.set_footer(text=f"Ticket ID: {ticket_id}")
 
     message = await log_channel.send(embed=embed, file=file)
@@ -327,60 +318,19 @@ async def send_support_transcript_log(
         await message.edit(embed=embed)
 
 
-async def close_ticket_channel(bot: commands.Bot, interaction: discord.Interaction):
-    guild = bot.get_guild(GUILD_ID) or interaction.guild
-    log_ch = bot.get_channel(LOG_CHANNEL)
-    ticket_id = interaction.channel.id
-
-    cur.execute("SELECT id, discord_id, category FROM ticket WHERE ticket_channel=?", (ticket_id,))
-    ticket_data = cur.fetchone()
-    if ticket_data is None:
-        await interaction.response.send_message("Dieser Channel ist kein Ticket.", ephemeral=True)
-        return
-
-    t_id, ticket_creator_id, category_id = ticket_data
-    ticket_creator = await get_ticket_creator(bot, guild, ticket_creator_id) if guild else None
-
-    embed = discord.Embed(description="Ticket wird in 5 Sekunden geloescht.", color=0xff0000)
-    await interaction.response.send_message(embed=embed)
-
-    is_support_ticket = category_id == CATEGORY_ID1 or interaction.channel.name.startswith("ticket-")
-    if is_support_ticket and log_ch is not None:
-        try:
-            await send_support_transcript_log(
-                bot=bot,
-                channel=interaction.channel,
-                log_channel=log_ch,
-                ticket_id=t_id,
-                ticket_creator=ticket_creator,
-                closed_by=interaction.user,
-            )
-        except Exception as error:
-            print("Transcript log error:", flush=True)
-            traceback.print_exception(type(error), error, error.__traceback__)
-            await log_ch.send(f"Transcript fuer `{interaction.channel.name}` konnte nicht erstellt werden.")
-
-    await asyncio.sleep(5)
-    await interaction.channel.delete(reason="Ticket geloescht")
-    cur.execute("DELETE FROM ticket WHERE discord_id=? AND ticket_channel=?", (ticket_creator_id, ticket_id))
-    conn.commit()
-
-
 def get_ticket_by_channel(channel_id: int):
     cur.execute("SELECT id, discord_id, category, closed FROM ticket WHERE ticket_channel=?", (channel_id,))
     return cur.fetchone()
 
 
-def team_role_id_for_category(category_id: int) -> int:
-    return TEAM_ROLE2 if category_id == CATEGORY_ID2 else TEAM_ROLE1
-
-
 async def require_ticket_team(interaction: discord.Interaction, category_id: int) -> bool:
     role_id = team_role_id_for_category(category_id)
+    if role_id is None:
+        await send_ephemeral_error(interaction, "Kategorie nicht gefunden.")
+        return False
     member_roles = getattr(interaction.user, "roles", [])
     if any(role.id == role_id for role in member_roles):
         return True
-
     await send_ephemeral_error(interaction, "Du hast keine Berechtigung für dieses Ticket.")
     return False
 
@@ -397,14 +347,19 @@ async def set_ticket_users_visibility(
     channel: discord.TextChannel,
     ticket_id: int,
     visible: bool,
+    exclude_role_ids: list[int] | None = None,
 ):
+    """Setzt die Sichtbarkeit für alle Ticket-User, außer Team-Rollen."""
+    all_team_role_ids = {c["role"] for c in CATEGORIES}
+    if exclude_role_ids:
+        all_team_role_ids.update(exclude_role_ids)
+
     for user_id in get_ticket_access(ticket_id):
         member = guild.get_member(user_id)
         if member is None:
             continue
-        if any(role.id in (TEAM_ROLE1, TEAM_ROLE2) for role in member.roles):
+        if any(role.id in all_team_role_ids for role in member.roles):
             continue
-
         await channel.set_permissions(
             member,
             view_channel=visible,
@@ -419,7 +374,7 @@ async def set_ticket_users_visibility(
 
 
 async def close_only_ticket_channel(bot: commands.Bot, interaction: discord.Interaction):
-    guild = bot.get_guild(GUILD_ID) or interaction.guild
+    guild  = bot.get_guild(GUILD_ID) or interaction.guild
     log_ch = bot.get_channel(LOG_CHANNEL)
     ticket_data = get_ticket_by_channel(interaction.channel.id)
     if ticket_data is None:
@@ -432,7 +387,6 @@ async def close_only_ticket_channel(bot: commands.Bot, interaction: discord.Inte
         if not await require_ticket_team(interaction, category_id):
             return
 
-
     if closed:
         await send_ephemeral_error(interaction, "Dieses Ticket ist bereits geschlossen.")
         return
@@ -442,8 +396,10 @@ async def close_only_ticket_channel(bot: commands.Bot, interaction: discord.Inte
     if guild is not None:
         await set_ticket_users_visibility(guild, interaction.channel, ticket_id, visible=False)
 
-    transcript_saved_text = "Kein Transcript für Dono-Tickets."
-    if category_id == CATEGORY_ID1 and log_ch is not None:
+    # Transcript nur wenn die Kategorie es aktiviert hat
+    cat = get_category(category_id)
+    transcript_saved_text = "Kein Transcript für diese Ticket-Kategorie."
+    if cat and cat.get("transcript", False) and log_ch is not None:
         ticket_creator = await get_ticket_creator(bot, guild, owner_id) if guild else None
         try:
             await send_support_transcript_log(
@@ -511,18 +467,56 @@ async def delete_ticket_channel(bot: commands.Bot, interaction: discord.Interact
         await send_ephemeral_error(interaction, "Dieses Ticket ist nicht geschlossen.")
         return
 
-    embed = discord.Embed(description="Ticket wird in 5 Sekunden geloescht.", color=discord.Color.red())
+    embed = discord.Embed(description="Ticket wird in 5 Sekunden gelöscht.", color=discord.Color.red())
     await interaction.response.send_message(embed=embed)
     await asyncio.sleep(5)
-    await interaction.channel.delete(reason="Ticket geloescht")
+    await interaction.channel.delete(reason="Ticket gelöscht")
     cur.execute("DELETE FROM ticket_access WHERE ticket_id=?", (ticket_id,))
     cur.execute("DELETE FROM ticket WHERE id=?", (ticket_id,))
     conn.commit()
 
 
-# ─── Modal für Support-Ticket ─────────────────────────────────────────────────
+# ─── Modals ───────────────────────────────────────────────────────────────────
+# Neues Modal hinzufügen:
+#   1. Klasse hier definieren (erbt von BaseTicketModal)
+#   2. Im MODAL_REGISTRY unten eintragen: "MeinName": MeinModal
+#   3. In config.json bei der Kategorie: "modal": "MeinName"
 
-class SupportModal(discord.ui.Modal, title="Support Ticket"):
+class BaseTicketModal(discord.ui.Modal):
+    """Basisklasse für alle Ticket-Modals."""
+    def __init__(self, bot: commands.Bot, interaction_orig: discord.Interaction, category: dict):
+        super().__init__()
+        self.bot              = bot
+        self.interaction_orig = interaction_orig
+        self.category         = category
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"{self.__class__.__name__} error:", flush=True)
+        traceback.print_exception(type(error), error, error.__traceback__)
+        await send_ephemeral_error(interaction, "Beim Erstellen des Tickets ist ein Fehler aufgetreten.")
+
+    async def _open_ticket(self, interaction: discord.Interaction):
+        """Erstellt den Ticket-Channel. Gibt (channel, number) zurück."""
+        return await create_ticket_channel(
+            bot=self.bot,
+            interaction=interaction,
+            category_id=self.category["id"],
+            team_role_id=self.category["role"],
+            channel_prefix=self.category["prefix"],
+        )
+
+    async def _finish(self, interaction: discord.Interaction, ticket_channel):
+        """Sendet Bestätigung und setzt das Menü zurück."""
+        confirm_embed = discord.Embed(
+            description=f'📬 Dein Ticket wurde erstellt! --> {ticket_channel.mention}',
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=confirm_embed, ephemeral=True)
+        await asyncio.sleep(1)
+        await reset_ticket_menu(self.interaction_orig, self.bot)
+
+
+class SupportModal(BaseTicketModal, title="Support Ticket"):
     anliegen = discord.ui.TextInput(
         label="Was ist dein Anliegen?",
         style=discord.TextStyle.long,
@@ -538,37 +532,18 @@ class SupportModal(discord.ui.Modal, title="Support Ticket"):
         max_length=512
     )
 
-    def __init__(self, bot: commands.Bot, interaction_orig: discord.Interaction):
-        super().__init__()
-        self.bot              = bot
-        self.interaction_orig = interaction_orig  # die ursprüngliche Select-Interaction
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print("SupportModal error:", flush=True)
-        traceback.print_exception(type(error), error, error.__traceback__)
-        await send_ephemeral_error(interaction, "Beim Erstellen des Support-Tickets ist ein Fehler aufgetreten.")
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-
-        ticket_channel, ticket_number = await create_ticket_channel(
-            bot=self.bot,
-            interaction=interaction,
-            category_id=CATEGORY_ID1,
-            team_role_id=TEAM_ROLE1,
-            channel_prefix="ticket",
-        )
+        ticket_channel, _ = await self._open_ticket(interaction)
         if ticket_channel is None:
             return
 
-        # Willkommens-Embed
         welcome_embed = discord.Embed(
             description=f'Willkommen {interaction.user.mention},\nIn kürze wird sich ein Teammitglied um dein Anliegen kümmern.',
             color=discord.Color.blue()
         )
         await ticket_channel.send(embed=welcome_embed)
 
-        # Formular-Embed
         form_embed = discord.Embed(title="📋 Ticket Details", color=discord.Color.blue())
         form_embed.add_field(name="❓ Anliegen", value=self.anliegen.value, inline=False)
         if self.clip.value:
@@ -576,20 +551,16 @@ class SupportModal(discord.ui.Modal, title="Support Ticket"):
         form_embed.set_footer(text=f"Erstellt von {interaction.user.name}")
         await ticket_channel.send(embed=form_embed, view=CloseButton(bot=self.bot))
 
-        # Channel-ID speichern
-        cur.execute("UPDATE ticket SET ticket_channel=? WHERE id=?", (ticket_channel.id, ticket_number))
-        conn.commit()
+        await self._finish(interaction, ticket_channel)
 
-        # Bestätigung
-        confirm_embed = discord.Embed(
-            description=f'📬 Dein Ticket wurde erstellt! --> {ticket_channel.mention}',
-            color=discord.Color.green()
-        )
-        await interaction.followup.send(embed=confirm_embed, ephemeral=True)
 
-        # Select-Menü zurücksetzen
-        await asyncio.sleep(1)
-        await reset_ticket_menu(self.interaction_orig, self.bot)
+# ─── Modal-Registry ───────────────────────────────────────────────────────────
+# Hier alle verfügbaren Modals eintragen.
+# Config-Beispiel: "modal": "SupportModal"
+
+MODAL_REGISTRY: dict[str, type[BaseTicketModal]] = {
+    "SupportModal": SupportModal,
+}
 
 
 # ─── Select-Menu View ─────────────────────────────────────────────────────────
@@ -608,17 +579,22 @@ class MyView(discord.ui.View):
         custom_id="support",
         placeholder="Wähle aus was für ein Ticket du erstellen möchtest",
         options=[
-            discord.SelectOption(label="Support Ticket",      description="Wir helfen gerne bei allen möglichen Anliegen!", emoji="❓", value="support1"),
-            discord.SelectOption(label="Dono Ticket",  description="Unterstütze dieses Projekt!", emoji="💸", value="support2"),
+            discord.SelectOption(
+                label=cat["select_label"],
+                description=cat.get("select_description", ""),
+                emoji=cat.get("select_emoji"),
+                # Index als value — garantiert eindeutig, egal ob IDs doppelt vorkommen
+                value=str(i),
+            )
+            for i, cat in enumerate(CATEGORIES)
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         print(
-            f"Ticket select used by {interaction.user} in channel {getattr(interaction.channel, 'id', None)} with values {select.values}",
+            f"Ticket select used by {interaction.user} in channel "
+            f"{getattr(interaction.channel, 'id', None)} with values {select.values}",
             flush=True,
         )
-        user_id = interaction.user.id
-        value   = select.values[0]
 
         if interaction.channel is None or interaction.channel.id != TICKET_CHANNEL:
             await interaction.response.send_message(
@@ -627,72 +603,59 @@ class MyView(discord.ui.View):
             )
             return
 
-        if value == "support1":
-            # Ticket-Limit für Kategorie 1 prüfen
-            ticket_count = count_user_tickets(user_id, CATEGORY_ID1)
-            if ticket_count >= MAX_TICKETS_CAT1:
-                embed = discord.Embed(
-                    title="Ticket-Limit erreicht",
-                    description=f"Du hast bereits **{ticket_count}/{MAX_TICKETS_CAT1}** Support-Tickets offen.",
-                    color=0xff0000
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                await asyncio.sleep(1)
-                await reset_ticket_menu(interaction, self.bot)
-                return
+        selected_index = int(select.values[0])
+        if selected_index >= len(CATEGORIES):
+            await send_ephemeral_error(interaction, "Ungültige Auswahl.")
+            return
+        cat = CATEGORIES[selected_index]
 
-            if interaction.channel.id != TICKET_CHANNEL:
-                return
+        user_id     = interaction.user.id
+        ticket_count = count_user_tickets(user_id, cat["id"])
+        if ticket_count >= cat["limit"]:
+            embed = discord.Embed(
+                title="Ticket-Limit erreicht",
+                description=f"Du hast bereits **{ticket_count}/{cat['limit']}** {cat['name']}-Tickets offen.",
+                color=0xff0000
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await asyncio.sleep(1)
+            await reset_ticket_menu(interaction, self.bot)
+            return
 
-            # Modal öffnen – interaction wird hier consumed
-            await interaction.response.send_modal(SupportModal(bot=self.bot, interaction_orig=interaction))
-
-        elif value == "support2":
-            # Ticket-Limit für Kategorie 2 prüfen
-            ticket_count = count_user_tickets(user_id, CATEGORY_ID2)
-            if ticket_count >= MAX_TICKETS_CAT2:
-                embed = discord.Embed(
-                    title="Ticket-Limit erreicht",
-                    description=f"Du hast bereits **{ticket_count}/{MAX_TICKETS_CAT2}** Dono-Tickets offen.",
-                    color=0xff0000
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                await asyncio.sleep(1)
-                await reset_ticket_menu(interaction, self.bot)
-                return
-
-            if interaction.channel.id != TICKET_CHANNEL:
-                return
-
+        # Modal aus Registry laden — "modal": "SupportModal" in config.json
+        # Weggelassen oder unbekannter Name → kein Modal, Ticket direkt erstellen
+        modal_name = cat.get("modal")
+        modal_cls = MODAL_REGISTRY.get(modal_name) if modal_name else None
+        if modal_cls is not None:
+            await interaction.response.send_modal(
+                modal_cls(bot=self.bot, interaction_orig=interaction, category=cat)
+            )
+        else:
             await interaction.response.defer(ephemeral=True)
 
             ticket_channel, ticket_number = await create_ticket_channel(
                 bot=self.bot,
                 interaction=interaction,
-                category_id=CATEGORY_ID2,
-                team_role_id=TEAM_ROLE2,
-                channel_prefix="dono",
+                category_id=cat["id"],
+                team_role_id=cat["role"],
+                channel_prefix=cat["prefix"],
             )
             if ticket_channel is None:
                 return
 
-            # Willkommens-Embed
             welcome_embed = discord.Embed(
-                description=f'Willkommen {interaction.user.mention},\nDein Dono-Ticket wurde erstellt!',
+                description=f'Willkommen {interaction.user.mention},\nDein {cat["name"]}-Ticket wurde erstellt!',
                 color=discord.Color.blue()
             )
             await ticket_channel.send(embed=welcome_embed, view=CloseButton(bot=self.bot))
 
-            # ?indica Command mit aktuellem Rabatt-Wert ausführen
-            rabatt = get_rabatt()
-            await ticket_channel.send(f"?indica{rabatt}")
-
-            # Channel-ID speichern
-            cur.execute("UPDATE ticket SET ticket_channel=? WHERE id=?", (ticket_channel.id, ticket_number))
-            conn.commit()
+            # Rabatt-Command nur für Dono-ähnliche Kategorien (prefix "dono")
+            if cat["prefix"] == "dono":
+                rabatt = get_rabatt()
+                await ticket_channel.send(f"?indica{rabatt}")
 
             confirm_embed = discord.Embed(
-                description=f'📬 Dono-Ticket wurde erstellt! --> {ticket_channel.mention}',
+                description=f'📬 {cat["name"]}-Ticket wurde erstellt! --> {ticket_channel.mention}',
                 color=discord.Color.green()
             )
             await interaction.followup.send(embed=confirm_embed, ephemeral=True)
@@ -700,7 +663,8 @@ class MyView(discord.ui.View):
             await reset_ticket_menu(interaction, self.bot)
 
 
-# Close Confirm
+# ─── Confirm Close ────────────────────────────────────────────────────────────
+
 class ConfirmCloseView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=30)
@@ -717,11 +681,8 @@ class ConfirmCloseView(discord.ui.View):
 
     @discord.ui.button(label="Abbrechen", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            content="❌ Vorgang abgebrochen.",
-            embed=None,
-            view=None
-        )
+        await interaction.response.edit_message(content="❌ Vorgang abgebrochen.", embed=None, view=None)
+
 
 # ─── Close-Button ─────────────────────────────────────────────────────────────
 
@@ -733,7 +694,7 @@ class CloseButton(discord.ui.View):
     async def on_error(self, interaction: discord.Interaction, error: Exception, item):
         print("CloseButton interaction error:", flush=True)
         traceback.print_exception(type(error), error, error.__traceback__)
-        await send_ephemeral_error(interaction, "Beim Schliessen des Tickets ist ein Fehler aufgetreten.")
+        await send_ephemeral_error(interaction, "Beim Schließen des Tickets ist ein Fehler aufgetreten.")
 
     @discord.ui.button(label="Ticket schließen", style=discord.ButtonStyle.blurple, custom_id="close")
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -742,15 +703,10 @@ class CloseButton(discord.ui.View):
             description="Bist du sicher, dass du dieses Ticket schließen möchtest?",
             color=discord.Color.orange()
         )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=ConfirmCloseView(bot=self.bot),
-            ephemeral=True
-        )
+        await interaction.response.send_message(embed=embed, view=ConfirmCloseView(bot=self.bot), ephemeral=True)
 
 
-# ─── Ticket-Options ───────────────────────────────────────────────────────────
+# ─── Closed Ticket Options ────────────────────────────────────────────────────
 
 class ClosedTicketOptions(discord.ui.View):
     def __init__(self, bot: commands.Bot):
@@ -791,14 +747,18 @@ class Ticket_System(commands.Cog):
             (member.id,)
         )
         tickets = cur.fetchall()
-
         if not tickets:
             return
 
-        guild = member.guild
+        guild  = member.guild
         log_ch = self.bot.get_channel(LOG_CHANNEL)
 
         for ticket_id, channel_id, category_id in tickets:
+            cat = get_category(category_id)
+            # auto_close_on_leave prüfen; Standard: True für Rückwärtskompatibilität
+            if cat and not cat.get("auto_close_on_leave", True):
+                continue
+
             channel = guild.get_channel(int(channel_id))
             if channel is None:
                 continue
@@ -807,7 +767,7 @@ class Ticket_System(commands.Cog):
                 await remember_current_ticket_users(channel, ticket_id, member.id)
                 await set_ticket_users_visibility(guild, channel, ticket_id, visible=False)
 
-                if category_id == CATEGORY_ID1 and log_ch is not None:
+                if cat and cat.get("transcript", False) and log_ch is not None:
                     try:
                         await send_support_transcript_log(
                             bot=self.bot,
@@ -828,7 +788,6 @@ class Ticket_System(commands.Cog):
                     description=f"🔒 Ticket wurde automatisch geschlossen, da **{member}** den Server verlassen hat.",
                     color=discord.Color.orange()
                 )
-
                 await channel.send(embed=embed, view=ClosedTicketOptions(bot=self.bot))
 
             except Exception as e:

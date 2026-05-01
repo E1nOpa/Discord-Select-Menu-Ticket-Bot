@@ -5,44 +5,122 @@
   "timezone": "CET",
   "embed_title": "Ticket erstellen",
   "embed_description": "Erstelle hier ein Ticket",
-  "rabatt_role_ids": [1104816665281179764],
-  "categories": [
+"categories": [
+     {
+       "name": "Dono",
+       "id": 1104816667017613448,
+       "role": 1104816665268588575,
+       "prefix": "info",
+       "limit": 5,
+       "transcript": false,
+       "auto_close_on_leave": true,
+       "select_label": "Dono Ticket",
+       "select_description": "Unterstütze unser Projekt!",
+       "select_emoji": "💸"
+     },
+     {
+       "name": "Support & Report",
+       "id": 1104816666438803580,
+       "role": 1104816665251827863,
+       "prefix": "ticket",
+       "limit": 3,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Support Ticket",
+       "select_description": "Allgemeines Anliegen oder einen Regelverstoß melden",
+       "select_emoji": "❓",
+       "modal": "SupportModal"
+     },
+     {
+       "name": "Fraktions Anliegen",
+       "id": 1104816667747422297,
+       "role": 1104816665251827863,
+       "prefix": "fm",
+       "limit": 1,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Fraktions Anliegen",
+       "select_description": "Fraktionserstellung oder ein Anliegen an unser Fraktionsmanagement",
+       "select_emoji": "👥",
+       "modal": "fmModal"
+     },
+     {
+       "name": "Community Anliegen",
+       "id": 1104816668045221994,
+       "role": 1104816665251827863,
+       "prefix": "cm",
+       "limit": 1,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Community Anliegen",
+       "select_description": "Gib uns Feedback oder Plane gemeinsam mit uns ein Event",
+       "select_emoji": "🚀",
+       "modal": "cmModal"
+     },
     {
-      "name": "Support",
-      "id": 1104816666438803580,
-      "role": 1104816665251827863,
-      "prefix": "ticket",
-      "limit": 3,
-      "transcript": true,
-      "auto_close_on_leave": true,
-      "select_label": "Support Ticket",
-      "select_description": "Wir helfen gerne bei allen möglichen Anliegen!",
-      "select_emoji": "❓",
-      "modal": "SupportModal"
-    },
-    {
-      "name": "Dono",
-      "id": 1104816667244109945,
-      "role": 1104816665268588575,
-      "prefix": "dono",
-      "limit": 5,
-      "transcript": false,
-      "auto_close_on_leave": true,
-      "select_label": "Dono Ticket",
-      "select_description": "Unterstütze dieses Projekt!",
-      "select_emoji": "💸"
-    },
-    {
-      "name": "Test",
-      "id": 1104816666438803580,
-      "role": 1104816665251827863,
-      "prefix": "test",
-      "limit": 3,
-      "transcript": true,
-      "auto_close_on_leave": true,
-      "select_label": "Test",
-      "select_description": "Wir helfen ungerne bei allen möglichen Anliegen!",
-      "select_emoji": "❓"
-    }
-  ]
-}
+       "name": "Bug Meldung",
+       "id": 1104816669190279239,
+       "role": 1104816665251827863,
+       "prefix": "bug",
+       "limit": 2,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Bug Meldung",
+      "select_description": "Melde uns einen technischen Fehler",
+       "select_emoji": "🔧",
+       "modal": "BugModal"
+     },
+     {
+       "name": "Teambewerbung",
+       "id": 1104816668372389998,
+       "role": 1104816665251827863,
+       "prefix": "Bewerbung",
+       "limit": 1,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Teambewerbung",
+       "select_description": "Sende uns deine Bewerbung (Nur bei geöffneter Phase)",
+       "select_emoji": "💼",
+       "modal": "BewerbungModal"
+     },
+     {
+       "name": "Teambeschwerde oder Feedback",
+       "id": 1104816668372389998,
+       "role": 1104816665268588581,
+       "prefix": "appeal",
+       "limit": 1,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Teambeschwerde oder Feedback",
+       "select_description": "Wende dich direkt und vertraulich an unsere Teamleitung",
+       "select_emoji": "🧑‍💼",
+       "modal": "BeschwerdeModal"
+     },
+     {
+       "name": "Cheating Verdacht",
+       "id": 1104816667466420362,
+       "role": 1104816665251827863,
+       "prefix": "ticket",
+       "limit": 3,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Cheating Verdacht",
+       "select_description": "Melde einen verdächtigen Spieler",
+       "select_emoji": "🛑",
+       "modal": "CheatingModal"
+     },
+     {
+       "name": "Crane Immobilien",
+       "id": 1104816669190279239,
+       "role": 1104816665251827863,
+       "prefix": "immo",
+       "limit": 2,
+       "transcript": true,
+       "auto_close_on_leave": true,
+       "select_label": "Crane Immobilien",
+      "select_description": "Anfrage für eine Crane-Immobilie",
+       "select_emoji": "🏠",
+       "modal": "CraneModal"
+     }
+   ]
+ }

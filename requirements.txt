@@ -2,3 +2,4 @@ discord.py
 chat-exporter
 pytz
 python-dotenv
+aiohttp

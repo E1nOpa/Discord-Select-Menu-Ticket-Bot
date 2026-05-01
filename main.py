@@ -20,7 +20,7 @@ BOT_TOKEN = os.getenv("TOKEN")
 GUILD_ID = config["guild_id"]
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="?", intents=intents)
 
 @bot.event
 async def on_ready():
